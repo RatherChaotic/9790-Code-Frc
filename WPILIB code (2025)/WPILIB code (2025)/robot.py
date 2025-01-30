@@ -48,7 +48,7 @@ class MyRobot(wpilib.TimedRobot):
 
         self.drive = wpilib.drive.DifferentialDrive(l_motor, r_motor)
 
-    def getAutonomousCommand():
+    def getAutonomousCommand(self):
     # Load the path you want to follow using its name in the GUI
         path = PathPlannerPath.fromPathFile('Path 1')
 

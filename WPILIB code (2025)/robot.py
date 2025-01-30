@@ -9,6 +9,10 @@
 
 import wpilib
 import wpilib.drive
+from pathplannerlib.auto import AutoBuilder
+from pathplannerlib.controller import PPLTVController
+from pathplannerlib.config import RobotConfig
+from pathplannerlib.auto import PathPlannerAuto
 import rev
 import cv2
 import robotpy_apriltag
@@ -51,17 +55,31 @@ class MyRobot(wpilib.TimedRobot):
         """Robot-wide initialization code should go here"""
 
 
-        self.joystick = wpilib.XboxController(0)
-        
-        self.lf_motor = wpilib.PWMSparkMax(4) 
-        self.lr_motor = wpilib.PWMSparkMax(3)
-        self.rf_motor = wpilib.PWMSparkMax(9)
-        self.rr_motor = wpilib.PWMSparkMax(2)
+        self.controller1 = wpilib.XboxController(0)
+        self.controller2 = wpilib.XboxController(1)
+        self.config = RobotConfig.fromGUISettings()
+        self.timer = wpilib.Timer()
+        self.lf_motor = wpilib.PWMSparkMax(1)
+        self.lr_motor = wpilib.PWMSparkMax(2)
+        self.rf_motor = wpilib.PWMSparkMax(3)
+        self.rr_motor = wpilib.PWMSparkMax(4)
 
         l_motor = wpilib.MotorControllerGroup(self.lf_motor, self.lr_motor)
         r_motor = wpilib.MotorControllerGroup(self.rf_motor, self.rr_motor)
 
         l_motor.setInverted(True)
+
+        AutoBuilder.configureHolonomic(
+            self.getPose, # Robot pose supplier
+            self.resetPose, # Method to reset odometry (will be called if your auto has a starting pose)
+            self.getRobotRelativeSpeeds, # ChassisSpeeds supplier. MUST BE ROBOT RELATIVE
+            lambda speeds, feedforwards: self.driveRobotRelative(speeds), # Method that will drive the robot given ROBOT RELATIVE ChassisSpeeds. Also outputs individual module feedforwards
+            PPLTVController(0.02), # PPLTVController is the built in path following controller for differential drive trains
+            self.config, # The robot configuration
+            self.shouldFlipPath, # Supplier to control path flipping based on alliance color
+            self # Reference to this subsystem to set requirements
+        )
+
 
         self.drive = wpilib.drive.DifferentialDrive(l_motor, r_motor)
 
@@ -69,25 +87,27 @@ class MyRobot(wpilib.TimedRobot):
         """This function is run once each time the robot enters autonomous mode."""
         self.timer.restart()
 
+    def getAutonomousCommand(self):
+        return PathPlannerAuto('New Auto')
+
     def autonomousPeriodic(self):
         """This function is called periodically during autonomous."""
 
         # Drive for two seconds
         if self.timer.get() < 2.0:
             # Drive forwards half speed, make sure to turn input squaring off
-            self.robotDrive.arcadeDrive(0.5, 0, squareInputs=False)
+            self.drive.arcadeDrive(-0.5, 0, squareInputs=False)
         else:
-            self.robotDrive.stopMotor()  # Stop robot
+            self.drive.stopMotor()  # Stop robot
 
     def teleopPeriodic(self):
         """Called when operation control mode is enabled"""
          #TEST THIS LATER (MOVEMENT ADJUSTMENTS)
         #drive motors
-        rightTrigger = self.joystick.getRightTriggerAxis()    #New (test) code
+        rightTrigger = self.controller1.getRightTriggerAxis()    #New (test) code
         #RightY = self.joystick.getRightY()    #original code
-        LeftX = self.joystick.getLeftX()
-        leftTrigger = self.joystick.getLeftTriggerAxis()
-        # print(f"RightY: {RightY} - LeftY: {LeftY}")
+        LeftX = self.controller1.getLeftX()
+        leftTrigger = self.controller1.getLeftTriggerAxis()
 
         #exponential movement
         if(rightTrigger > 0):
@@ -118,15 +138,14 @@ class MyRobot(wpilib.TimedRobot):
             LeftX = LeftX * 0.66
         elif((LeftX < 0.1 and LeftX > -0.1) and (rightTrigger >= 0.5 or rightTrigger <=-0.5)):
             rightTrigger = rightTrigger * 0.66
-        print(f"rightTrigger: {rightTrigger} - LeftX: {LeftX}")
 
         if((leftTrigger < 0.1 and leftTrigger > -0.1) and (LeftX >= 0.5 or LeftX <= -0.5)):
             LeftX = LeftX * 0.66
         elif((LeftX < 0.1 and LeftX > -0.1) and (leftTrigger >= 0.5 or leftTrigger <=-0.5)):
             leftTrigger = leftTrigger * 0.66
-        print(f"leftTrigger: {leftTrigger} - LeftX: {LeftX}")
 
         self.drive.arcadeDrive(rightTrigger, LeftX, leftTrigger) # new arcade input
+        self.adjustIntake()
 
     def disabledInit(self) -> None:
         # This just makes sure that our simulation code knows that the motor is off
@@ -134,3 +153,11 @@ class MyRobot(wpilib.TimedRobot):
         self.lr_motor.set(0)
         self.rf_motor.set(0)
         self.rr_motor.set(0)
+
+
+    def adjustIntake(self):
+        rt = self.controller2.getRightBumper()
+        lt = self.controller2.getLeftBumper()
+
+
+
